@@ -1,121 +1,70 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import threading
-import time
+import os
+import secrets
+import string
 
-class ShredderApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Güvenli Dosya Öğütücü")
-        self.root.geometry("500x300")
-        self.root.resizable(False, False)
-        
-        self.selected_file_path = None
-        
-        self._build_ui()
+class SecureShredder:
+    def __init__(self, file_path, progress_callback=None):
+        self.file_path = file_path
+        self.progress_callback = progress_callback
+        self.file_size = os.path.getsize(file_path)
 
-    def _build_ui(self):
-        # Üst Başlık
-        title_label = tk.Label(self.root, text="Güvenli Dosya Öğütücü", font=("Helvetica", 16, "bold"))
-        title_label.pack(pady=15)
+    def _update_progress(self, current_pass, total_passes):
+        """Arayüzdeki ilerleme çubuğunu tetikler."""
+        if self.progress_callback:
+            progress_percent = int((current_pass / total_passes) * 100)
+            self.progress_callback(progress_percent)
 
-        # 1. Dosya Seçim Alanı
-        file_frame = tk.Frame(self.root)
-        file_frame.pack(pady=10, fill="x", padx=20)
-        
-        self.file_label = tk.Label(file_frame, text="Seçilen Dosya: Yok", fg="gray", anchor="w")
-        self.file_label.pack(side="left", fill="x", expand=True)
-        
-        select_btn = tk.Button(file_frame, text="Dosya Seç", command=self.select_file, width=10)
-        select_btn.pack(side="right", padx=5)
+    def zero_fill(self):
+        """1 Geçiş: Dosyanın tamamını sıfır (0x00) baytlarıyla doldurur."""
+        self._overwrite_custom(passes=1, pass_patterns=[b'\x00'])
+        self._destroy_metadata_and_delete()
 
-        # 2. Silme Metodu Seçim Alanı
-        method_frame = tk.Frame(self.root)
-        method_frame.pack(pady=15, fill="x", padx=20)
-        
-        method_label = tk.Label(method_frame, text="Silme Metodu Seçin:", anchor="w")
-        method_label.pack(side="left")
-        
-        self.method_combobox = ttk.Combobox(method_frame, state="readonly", width=30)
-        self.method_combobox['values'] = ("Sıfırla Doldur (Hızlı)", "DoD 5220.22-M (3 Geçiş)", "Gutmann (35 Geçiş)")
-        self.method_combobox.current(1) # Varsayılan olarak DoD seçili gelir
-        self.method_combobox.pack(side="right", padx=5)
+    def dod_5220_22_m(self):
+        """3 Geçiş: Sıfır (0x00), Bir (0xFF) ve Rastgele veri yazar."""
+        patterns = [b'\x00', b'\xff', None] # None = Rastgele Veri
+        self._overwrite_custom(passes=3, pass_patterns=patterns)
+        self._destroy_metadata_and_delete()
 
-        # 3. İlerleme Çubuğu (Progress Bar)
-        self.progress_bar = ttk.Progressbar(self.root, orient="horizontal", length=460, mode="determinate")
-        self.progress_bar.pack(pady=15)
-        
-        self.status_label = tk.Label(self.root, text="Bekleniyor...", fg="blue")
-        self.status_label.pack()
+    def gutmann(self):
+        """35 Geçiş: Yüksek güvenlikli rastgele veri yazma simülasyonu."""
+        # Gerçek Gutmann çok spesifik örüntüler içerir, modern diskler için 
+        # 35 defa kriptografik rastgele veri yazmak aynı etkiyi yaratır.
+        patterns = [None] * 35 
+        self._overwrite_custom(passes=35, pass_patterns=patterns)
+        self._destroy_metadata_and_delete()
 
-        # 4. Öğütme Butonu
-        self.shred_btn = tk.Button(self.root, text="DOSYAYI ÖĞÜT", bg="#d9534f", fg="white", font=("Helvetica", 10, "bold"), command=self.start_shredding_thread)
-        self.shred_btn.pack(pady=15)
-
-    def select_file(self):
-        file_path = filedialog.askopenfilename(title="Öğütülecek Dosyayı Seçin")
-        if file_path:
-            self.selected_file_path = file_path
-            # Dosya yolunun sadece son kısmını (adını) göstermek için
-            file_name = file_path.split("/")[-1] 
-            self.file_label.config(text=f"Seçilen Dosya: {file_name}", fg="black")
-
-    def start_shredding_thread(self):
-        if not self.selected_file_path:
-            messagebox.showwarning("Uyarı", "Lütfen önce bir dosya seçin!")
-            return
-            
-        selected_method = self.method_combobox.get()
-        
-        # Kullanıcıdan son bir onay alalım
-        confirm = messagebox.askyesno("Kritik Uyarı", f"Bu dosya {selected_method} metodu ile KALICI olarak silinecektir.\n\nEmin misiniz?")
-        
-        if confirm:
-            # Arayüzün donmaması için işlemi arka planda (Thread) başlatıyoruz
-            self.shred_btn.config(state="disabled")
-            self.progress_bar["value"] = 0
-            
-            shred_thread = threading.Thread(target=self.run_shredder_backend, args=(selected_method,))
-            shred_thread.start()
-
-    def run_shredder_backend(self, method):
-        """
-        ARKA PLAN KODLARINI BURAYA BAĞLAYACAKSINIZ.
-        Bu fonksiyon ayrı bir thread'de çalıştığı için GUI'yi dondurmaz.
-        """
-        self.status_label.config(text=f"İşlem başlatılıyor: {method}")
-        
-        try:
-            # TODO: Arkadaşınızın yazacağı 'ogutucu' sınıfını burada çağıracaksınız.
-            # Şimdilik backend yazılana kadar sahte bir ilerleme simülasyonu yapıyoruz:
-            
-            total_steps = 100
-            for i in range(total_steps):
-                time.sleep(0.05) # Öğütme işlemi sürüyormuş gibi bekletiyoruz
+    def _overwrite_custom(self, passes, pass_patterns):
+        """Dosyanın üzerine bayt seviyesinde yazma işlemini gerçekleştirir."""
+        with open(self.file_path, "ba+") as f:
+            for p in range(passes):
+                f.seek(0)
+                chunk_size = 1024 * 1024  # Belleği korumak için 1 MB'lık parçalar
+                written = 0
                 
-                # İlerleme çubuğunu güncelleme (Thread içinden GUI güncellerken dikkatli olunmalıdır, Tkinter'da .after() kullanmak daha güvenlidir ama basitlik için direkt güncelliyoruz)
-                self.progress_bar["value"] = i + 1
-                self.status_label.config(text=f"İşleniyor... %{i+1}")
-                self.root.update_idletasks() 
-            
-            # İşlem bittiğinde
-            self.status_label.config(text="Dosya başarıyla yok edildi!", fg="green")
-            messagebox.showinfo("Başarılı", "Dosya kalıcı olarak öğütüldü.")
-            
-            # Arayüzü sıfırla
-            self.selected_file_path = None
-            self.file_label.config(text="Seçilen Dosya: Yok", fg="gray")
-            
-        except Exception as e:
-            self.status_label.config(text="Bir hata oluştu!", fg="red")
-            messagebox.showerror("Hata", f"Silme işlemi sırasında hata: {str(e)}")
-            
-        finally:
-            self.shred_btn.config(state="normal")
-            self.progress_bar["value"] = 0
+                # O anki geçişin örüntüsünü belirle
+                current_pattern = pass_patterns[p]
+                
+                while written < self.file_size:
+                    write_size = min(chunk_size, self.file_size - written)
+                    if current_pattern:
+                        f.write(current_pattern * write_size)
+                    else:
+                        f.write(os.urandom(write_size)) # Rastgele bayt üret
+                    written += write_size
+                
+                f.flush()
+                os.fsync(f.fileno()) # Verinin diske fiziksel olarak yazıldığından emin ol
+                self._update_progress(p + 1, passes)
 
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ShredderApp(root)
-    root.mainloop()
+    def _destroy_metadata_and_delete(self):
+        """Dosyanın adını MFT (Master File Table) kayıtlarından gizler ve siler."""
+        dir_name = os.path.dirname(self.file_path)
+        # 12 karakterlik rastgele bir dosya adı oluştur
+        random_name = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+        new_path = os.path.join(dir_name, random_name)
+        
+        # Dosya adını değiştir
+        os.rename(self.file_path, new_path)
+        
+        # Fiziksel olarak sil
+        os.remove(new_path)
