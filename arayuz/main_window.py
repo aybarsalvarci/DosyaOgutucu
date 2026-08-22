@@ -2,6 +2,12 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import time
+import sys
+import os
+
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.shredder import SecureShredder
 
 class ShredderApp:
     def __init__(self, root):
@@ -79,6 +85,46 @@ class ShredderApp:
             shred_thread.start()
 
     def run_shredder_backend(self, method):
+        """
+        ARKA PLAN KODLARI BURAYA BAĞLANDI.
+        """
+        self.status_label.config(text=f"İşlem başlatılıyor: {method}")
+        
+        try:
+            # 1. İlerleme çubuğunu güncelleyecek aracı (callback) fonksiyonu tanımlıyoruz
+            def progress_callback(percentage):
+                self.progress_bar["value"] = percentage
+                self.status_label.config(text=f"İşleniyor... %{percentage}")
+                self.root.update_idletasks()
+
+            # 2. Adli Bilişim tarafında yazılan sınıfı başlatıyoruz
+            shredder = SecureShredder(self.selected_file_path, progress_callback)
+
+            # 3. Arayüzden seçilen silme metoduna göre ilgili fonksiyonu tetikliyoruz
+            if method == "Sıfırla Doldur (Hızlı)":
+                shredder.zero_fill()
+            elif method == "DoD 5220.22-M (3 Geçiş)":
+                shredder.dod_5220_22_m()
+            elif method == "Gutmann (35 Geçiş)":
+                shredder.gutmann()
+            else:
+                raise ValueError("Bilinmeyen silme metodu seçildi!")
+            
+            # İşlem bittiğinde
+            self.status_label.config(text="Dosya başarıyla yok edildi!", fg="green")
+            messagebox.showinfo("Başarılı", "Dosya kalıcı olarak öğütüldü.")
+            
+            # Arayüzü sıfırla
+            self.selected_file_path = None
+            self.file_label.config(text="Seçilen Dosya: Yok", fg="gray")
+            
+        except Exception as e:
+            self.status_label.config(text="Bir hata oluştu!", fg="red")
+            messagebox.showerror("Hata", f"Silme işlemi sırasında hata: {str(e)}")
+            
+        finally:
+            self.shred_btn.config(state="normal")
+            self.progress_bar["value"] = 0
         """
         ARKA PLAN KODLARINI BURAYA BAĞLAYACAKSINIZ.
         Bu fonksiyon ayrı bir thread'de çalıştığı için GUI'yi dondurmaz.
